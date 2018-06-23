@@ -1,5 +1,7 @@
 // Algorytm Carliera dla problemu RPQ
 // Autor: Paweł Mędyk
+// Oznaczenia zgodne z literaturą
+// http://www.dbc.wroc.pl/Content/19825/smutnicki_algorytmy.pdf
 #include <iostream>
 #include <fstream>
 #include <chrono>
