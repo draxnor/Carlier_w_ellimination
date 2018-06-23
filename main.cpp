@@ -1,12 +1,16 @@
+// Algorytm Carliera dla problemu RPQ
+// Autor: Paweł Mędyk
 #include <iostream>
 #include <fstream>
 #include <chrono>
 #include <limits>
 
 using namespace std;
-int n_Nodes=100000;
+int n_Nodes=100000; // maksymalna liczba wezlow podproblemu
 
-class Node{ // Wezel rozwiazania i charakterystyczne dla niego wielkosci r[], q[], LB(K,c) (pomocnicze)
+// Wezel przechowujacy podproblem
+// i charakterystyczne dla niego wielkosci r[], q[], LB(K,c); LB jako priorytet
+class Node{
 public:
     int* r;
     int* q;
@@ -15,16 +19,22 @@ public:
     ~Node() {delete[] r; delete []q;}
 };
 
+// algorytm Schrage z podzialem zadan
 void algorytmSchragePmtn(int &n, int *&r, int *&p, int *&q, long &cmax);
+// algorytm Schrage
 void algorytmSchrage(int &n, int *&o_perm, int *&r, int *&p, int *&q, long &cmax);
 
+//sortowanie tablicy przez kopcowanie wedlug priorytetu
+//porzadek malejacy
 void heapSortDesc(int *&priority, int *&perm, int &n);
+//porzadek rosnacy
 void heapSortAsc(int *&priority, int *&perm, int &n);
 
+//funkcje Push, Pop dla kopca podproblemow
+void heapPush(Node**& tabWez,int&n_heap); // traktuje element tablicy 'n+1' jako nowy wezel
+Node* heapPop(Node**& tabWez,int&n_heap); // zwraca wezel w zerowym elemencie tablicy
 
-void heapPush(Node**& tabWez,int&n_heap);
-Node* heapPop(Node**& tabWez,int&n_heap);
-
+//algorytm Carliera
 int Carlier(int &n, int*& perm, int *&r, int *&p, int *&q);
 
 int main() {
@@ -47,7 +57,7 @@ int main() {
 
     while (!plik_in.eof()) {
         getline(plik_in, linia);
-        if (linia[0] == 'd' && linia[1] == 'a') {
+        if (linia[0] == 'd' && linia[1] == 'a') { // jesli w danej linii 'data', zacznij czytac
             plik_in >> n;
 
             perm = new int[n + 1];
@@ -82,65 +92,67 @@ int main() {
     return 0;
 }
 
-int Carlier(int &n, int*& o_perm, int *&r, int *&p, int *&q) { // TODO lista argumentow
-    long u, LB, UB = std::numeric_limits<long>::max(); // dlugosc usz. Schrage, LowerBand, UpperBand
+int Carlier(int &n, int*& o_perm, int *&r, int *&p, int *&q) {
+    long    u,   // biezaca dlugosc usz. Schrage,
+            LB,  // LowerBand,
+            UB = std::numeric_limits<long>::max(); // UpperBand
+    long hk, hk_c,LBA, LBB; // H(K), H(K+c), LB(K,c) dla obu wezlow potomnych
     int *C = new int [n+1]; C[0]=0; // terminy zakonczenia wykonywania zadan
-    int a,b,c;  // indeksy zadan a, b, c
-    int pi_i, pi_b, pi_c;   // zadania a, b, c
-    int rk,pk,qk;   // R(K), P(K), Q(K)
-    long hk, hk_c,LBA, LBB; // H(K), H(Kuc), LB(K,c) dla obu wezlow potomnych
-    int *perm = new int[n+1];   // permutacja w danym wezle rozwiazania
-    int temp;   // zmienna pomocnicza
+    int a,b,c;              // indeksy zadan: a - poczatek bloku, b - koniec bloku, c - zadanie referencyjne
+    int pi_i, pi_b, pi_c;   // numery zadan a, b, c
+    int rk,pk,qk;           // R(K), P(K), Q(K) (dla bloku krytycznego)
+    int *perm = new int[n+1];// permutacja w danym wezle rozwiazania
+    int temp;       // zmienna pomocnicza
     int n_heap=0;   // rozmiar kopca
-    int ind;
-    int elimin_threshold;
-    Node* task; // biezacy wezel rozwiazania
+    int ind;        // pomocnicza - indeks zadania do potencjalnej eliminacji
+    int elimin_threshold;   // prog eliminacji
+    Node* task;             // biezacy wezel rozwiazania
 
     Node** taskHeap=new Node*[n_Nodes];  // tablica sluzaca jako kopiec rozwiazan oczekujacych
     for (int i=0; i<n_Nodes; ++i){
         taskHeap[i]=new Node(n+1);
     }
+    // inicjuj wezel 0 oryginalnymi danymi
     for (int i=1; i<=n; ++i) {
         taskHeap[0]->r[i]=r[i];
         taskHeap[0]->q[i]=q[i];
     }
-    task=taskHeap[0]; // wezel zerowy
+    task=taskHeap[0]; // biezace zadanie to wezel 0
 
     while( task != NULL) { // dopoki istnieje niezamkniety wezel
-
-        c = 0; // c  domyslnie nieznalezione
-        algorytmSchragePmtn(n, task->r, p, task->q, LB); // algorytm Schrage
-        if (LB < UB) { // jesli zauktualizowany LB wiekszy lub rowny UB, zakoncz
-            algorytmSchrage(n, perm, task->r, p, task->q, u); // mam cmax i permutacje
+        c = 0;  // c  domyslnie nieznalezione (=0)
+        algorytmSchragePmtn(n, task->r, p, task->q, LB); // algorytm Schrage z podzialem zadan (wyznaczenie LB)
+        if (LB < UB) { // jesli zauktualizowany LB wiekszy lub rowny UB, zamknij wezel
+            algorytmSchrage(n, perm, task->r, p, task->q, u); // Schrage, wyznaczona permutacja i cmax tej permutacji
 
             for (int i = 1; i <= n; ++i) { // wyznacz wszystkie C, znajdz a, b
                 pi_i = perm[i];
-                if (task->r[pi_i] >= C[i - 1]) {  // wyznacz wszystkie C i znajdz a
+                if (task->r[pi_i] >= C[i - 1]) {  // znaleziono a
                     a = i;
                     C[i] = task->r[pi_i] + p[pi_i];
                 } else
                     C[i] = C[i - 1] + p[pi_i];
 
-                if (C[i] + task->q[pi_i] == u) { // wyznacz b
+                if (C[i] + task->q[pi_i] == u) { // znaleziono b
                     b = i;
                     pi_b = perm[b];
                 }
             } //mam a,b
 
-            if (u < UB) { // aktualizacja UB, zapamietaj permutacje
+            if (u < UB) { // jesli rozwiazanie lepsze od dotychczasowego -> aktualizacja UB, zapamietanie permutacji
                 UB = u;
                 for(int i=0; i<=n; ++i)
                     o_perm[i]=perm[i];
             }
 
-            for (int i = b - 1, qb = q[pi_b]; i >= a; --i) // znajdz c
+            for (int i = b - 1, qb = q[pi_b]; i >= a; --i) // znajdz zadanie c
                 if (task->q[perm[i]] < qb) {
                     c = i;
                     pi_c = perm[c];
                     break;
                 }
-        }
-        // mam c
+        }// mam c
+
         if (c != 0) { // jesli nie znaleziono c (c=0), to zamknij wezel
             //znaleziono zadanie referencyjne
             // mam a,b,c, C dla (1,b)
@@ -154,7 +166,7 @@ int Carlier(int &n, int*& o_perm, int *&r, int *&p, int *&q) { // TODO lista arg
 
             hk = rk + pk + qk;
 
-            // wezel 1A (zadanie c poprzedza zbior K ) - q'
+            // wezel 1A (zadanie c poprzedza blok K) - q'
             temp = max(task->q[pi_c], pk + qk);//korekta q, zadanie c przed blokiem
             hk_c = pk + p[pi_c] + min(qk, temp) + min(rk, task->r[pi_c]);
             LB = max(LB, hk);
@@ -166,7 +178,7 @@ int Carlier(int &n, int*& o_perm, int *&r, int *&p, int *&q) { // TODO lista arg
                     taskHeap[n_heap + 1]->q[i] = task->q[i];
                     taskHeap[n_heap + 1]->r[i] = task->r[i];
                 }
-                taskHeap[n_heap + 1]->q[pi_c] = temp; // aktualizacji q'
+                taskHeap[n_heap + 1]->q[pi_c] = temp; // aktualizacja q'
                 //dodatkowe testy eliminacyjne
                 elimin_threshold=UB-hk;
                 for (int i = 1; i <= n; ++i) // dla zbioru J\K
@@ -183,11 +195,11 @@ int Carlier(int &n, int*& o_perm, int *&r, int *&p, int *&q) { // TODO lista arg
                 heapPush(taskHeap, n_heap); // dodanie zadania do kopca
             }
 
-            // wezel 1A (zadanie c na koncu zbioru K ) - r'
+            // wezel 1A (zadanie c na koncu bloku K ) - r'
             temp = max(task->r[pi_c], rk + pk); //korekta r, zadanie c za blokiem
             hk_c = pk + p[pi_c] + min(qk, task->q[pi_c]) + min(rk, temp);
-            LBB = max(LB, hk_c); // oblicz  dolne ograniczenie dla nastepnika B
-            if (LBB < UB) { // dodaj zadanie, jesli dolne ograniczenie mniejsze od UB
+            LBB = max(LB, hk_c);    // oblicz  dolne ograniczenie dla nastepnika B
+            if (LBB < UB) {         // dodaj zadanie, jesli dolne ograniczenie mniejsze od UB
                 // pomocnicze dolne ograniczenie jako priorytet w kopcu
                 taskHeap[n_heap + 1]->priority = LBB;
                 for (int i = 1; i <= n; ++i) {//przepisz r i q
@@ -196,7 +208,7 @@ int Carlier(int &n, int*& o_perm, int *&r, int *&p, int *&q) { // TODO lista arg
                 }
                 taskHeap[n_heap + 1]->r[pi_c] = temp; // akutalizacja r'
                 //dodatkowe testy eliminacyjne
-                elimin_threshold=UB-hk;
+                elimin_threshold=UB-hk;      // prog eliminacji
                 for (int i = 1; i <= n; ++i) // dla zbioru J\K
                     if (i < c || b < i) {
                         ind = perm[i];
@@ -409,7 +421,7 @@ Node *heapPop(Node **&tabWez, int &n_heap) {
 
     int p, ch;
     Node *tmp;
-    Node *tmp2; // latka
+    Node *tmp2;
 
     tmp = tabWez[n_heap];
     tmp2 = tabWez[0];
